@@ -1,3 +1,6 @@
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 from typing import Literal
 from typing_extensions import TypedDict
 from langgraph.graph import MessagesState, END, START, StateGraph
@@ -18,9 +21,7 @@ from langgraph.types import interrupt
 from langgraph.checkpoint.memory import MemorySaver
 import uuid
 import os
-import sys
-__import__('pysqlite3')
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 
 import streamlit as st
 import time
