@@ -18,6 +18,9 @@ from langgraph.types import interrupt
 from langgraph.checkpoint.memory import MemorySaver
 import uuid
 import os
+import sys
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import streamlit as st
 import time
