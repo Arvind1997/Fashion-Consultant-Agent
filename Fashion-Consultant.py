@@ -28,8 +28,8 @@ import time
 from langchain_core.messages import AIMessage, HumanMessage
 
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SERPERDEV_API_KEY = os.getenv("SERPERDEV_API_KEY")
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+SERPERDEV_API_KEY = st.secrets["SERPERDEV_API_KEY"]
 # members = ['summary', 'dressing_style', 'color_recommender', 'outfit_recommender', 'human']
 #, 'color_recommender', 'outfit_recommender']
 # options = members
@@ -48,10 +48,10 @@ def __init__():
     st.session_state.thread_config = {"configurable": {"thread_id": "nkarvindkumar@gmail.com"}}
 
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
-    summary_vector_store = Chroma(collection_name="user_dressing_style", embedding_function=embeddings)
+    summary_vector_store = Chroma(collection_name="user_dressing_style", embedding_function=embeddings, persist_directory="./chroma_db")
     st.session_state.summary_retriever = summary_vector_store.as_retriever()
 
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY, persist_directory="./chroma_db")
     save_vector_store = Chroma(collection_name="saved_outfits", embedding_function=embeddings)
     st.session_state.save_retriever = save_vector_store.as_retriever()
 
