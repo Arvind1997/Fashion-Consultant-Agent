@@ -51,8 +51,8 @@ def __init__():
     summary_vector_store = Chroma(collection_name="user_dressing_style", embedding_function=embeddings, persist_directory="./chroma_db")
     st.session_state.summary_retriever = summary_vector_store.as_retriever()
 
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY, persist_directory="./chroma_db")
-    save_vector_store = Chroma(collection_name="saved_outfits", embedding_function=embeddings)
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
+    save_vector_store = Chroma(collection_name="saved_outfits", embedding_function=embeddings, persist_directory="./chroma_db")
     st.session_state.save_retriever = save_vector_store.as_retriever()
 
     st.session_state.checkpointer = MemorySaver()
