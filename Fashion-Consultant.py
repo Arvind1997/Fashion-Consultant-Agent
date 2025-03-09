@@ -21,7 +21,8 @@ from langgraph.types import interrupt
 from langgraph.checkpoint.memory import MemorySaver
 import uuid
 import os
-
+from groq import Groq
+import base64
 
 import streamlit as st
 import time
@@ -30,6 +31,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 SERPERDEV_API_KEY = st.secrets["SERPERDEV_API_KEY"]
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 # members = ['summary', 'dressing_style', 'color_recommender', 'outfit_recommender', 'human']
 #, 'color_recommender', 'outfit_recommender']
 # options = members
@@ -481,6 +483,9 @@ def get_message_content(msg):
         return msg.content
     return str(msg)
 
+def convert_base64(photo):
+    return base64.b64encode(photo.read()).decode()
+
 
 if __name__ == '__main__':
 
@@ -490,13 +495,19 @@ if __name__ == '__main__':
     print("Session State data: ", st.session_state)
     if 'first_render' not in st.session_state:
         __init__()
-
+    if "uploader_key" not in st.session_state:
+        st.session_state["uploader_key"] = 1
+    if 'photo_description' not in st.session_state:
+        st.session_state.photo_description = {}
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'checkpoint' not in st.session_state:
         st.session_state.checkpoint = None
 
     st.title("Fashion Assistant")
+    with st.popover("Login here with you email.."):
+        name = st.text_input("What's your name?")
+        st.session_state.thread_config = {"configurable": {"thread_id": name}}
     # thread_config = {"configurable": {"thread_id": "default_thread"}}
 
     for msg in st.session_state.messages:
@@ -505,12 +516,63 @@ if __name__ == '__main__':
         elif isinstance(msg, HumanMessage):
             st.chat_message("user").write(msg.content)
 
+    photo_description  = {}
+
+    if photos:= st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"], accept_multiple_files=True, key=st.session_state["uploader_key"]):
+        st.session_state.image = photos
+        for enu, photo in enumerate(st.session_state.image):
+            base64_image = convert_base64(photo)
+
+            client = Groq(api_key=GROQ_API_KEY)
+            completion = client.chat.completions.create(
+                model="llama-3.2-90b-vision-preview",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """
+                                            Describe the person's attributes in  the image in the following template:
+                                                1. Height: You can guess the height or you can leave it blank
+                                                2. Weight: You can guess the weight
+                                                3. Skin color: Generalize the skin color of the person (for fashion recommendation)
+                                                4. Shirt or top color:
+                                                5. Pant or Bottoms color: If applicable
+                                        """
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/jpeg;base64," + base64_image
+                                }
+                            }
+                        ]
+                    }
+                    
+                ],
+                temperature=1,
+                max_completion_tokens=1024,
+                top_p=1,
+                stream=False,
+                stop=None,
+                )
+            
+            st.session_state.photo_description[f"Image_{enu}"] = completion.choices[0].message
+        st.session_state["uploader_key"] += 1
+        st.rerun()
+
     # user_input = st.chat_input("What are you wearing?",)
     if prompt := st.chat_input("What are you wearing?", key = "initial_chat_input"):
+        
     # --- INITIAL CONVERSATION ---
 
         st.session_state.messages.append(HumanMessage(content=prompt))
         st.chat_message("user").markdown(prompt)
+
+        if st.session_state.photo_description:
+            prompt = prompt + "\n\n" + str(st.session_state.photo_description)
+            st.session_state.photo_description = None
 
         if "first_render" not in st.session_state:
             st.session_state.first_render = True
