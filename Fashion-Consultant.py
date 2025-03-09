@@ -97,9 +97,14 @@ def agent1_tools():
         3. Budget: <required>
         4. Location: <required>
 
-        If the answer seems to be ask the human to clarify the situation. Keep the answer short. DO NOT transfer to the next agent until you have all the above information.
+        Tools available to you: 
+        1. Handoff tool: This tool lets you to transfer to the next agent when you have all the information.
+
+        If the answer seems to be incomplete, ask the human to clarify the situation. Keep the answer short. 
+        DO NOT transfer to the next agent until you have all the above information.
 
         You MUST include human-readable response before transferring to another agent.
+
         """
 
     groq_llm = ChatOpenAI(api_key=OPENAI_API_KEY, model="gpt-4o", temperature=0.5)
@@ -137,22 +142,25 @@ config: Annotated[str, "Username of the user - config"],
 
     print("Entering save_dress_style")
 
-    if st.session_state.summary_vector_store.get(config) is None:
-        pre = defaultdict(list)
-        pre["dressing_style"] = [outfit_description]
-        st.session_state.summary_vector_store.add_documents(
-            ids = [config],
-            documents = [Document(page_content=json.dumps(pre), metadata={"source": "dress_style_agent"})],
-        )
-    else:
-        pre = json.loads(st.session_state.summary_vector_store.get(config)["documents"][0])
-        pre["dressing_style"].append(outfit_description)
-        st.session_state.summary_vector_store.update_documents(
-        ids=[config],
-        documents=[Document(page_content=json.dumps(pre), metadata={"source": "dress_style_agent"})]
-        )
+    try:
 
-    return "Dress styles saved successfully!"
+        if st.session_state.summary_vector_store.get(config) is None:
+            pre = defaultdict(list)
+            pre["dressing_style"] = [str(outfit_description)]
+            st.session_state.summary_vector_store.add_documents(
+                ids = [config],
+                documents = [Document(page_content=json.dumps(pre), metadata={"source": "dress_style_agent"})],
+            )
+        else:
+            pre = json.loads(st.session_state.summary_vector_store.get(config)["documents"][0])
+            pre["dressing_style"].append(str(outfit_description))
+            st.session_state.summary_vector_store.update_documents(
+            ids=[config],
+            documents=[Document(page_content=json.dumps(pre), metadata={"source": "dress_style_agent"})]
+            )
+        return "Dress styles saved successfully!"
+    except Exception as e:
+        return e
 
 def agent2_tools():
     openai_template = """
@@ -169,17 +177,21 @@ def agent2_tools():
                 Additionally, you will retrieve the user's past interaction data (if available) to infer their 
                 dressing style using an attached tool.
 
-                Use the attached tool to check if the user has interacted before and has stored information about their dressing style.
-                If available, retrieve and confirm with the user.
-
-                Use the tool to transfer control to the next agent after all data is collected.
+                Tools available: 
+                1. Summarizer tool: This tool searches and retrieves user's previous inetraction/uploaded information. You can
+                use this information to understand user's preference.
+                2. Save dress tool: Save the image description information which was uploaded by the user in the current interaction.
+                3. Handoff tool: TThis tool lets you to transfer to the next agent when you have all the information.
 
                 Steps:
                 1. If available, analyze the given data to infer the user's dressing style.
                 2. If not available, ask the user for their dressing style preferences.
-                3. If available, retrieve the user's past interaction data to infer their dressing style.
-                3. Confirm the user's dressing style preferences. 
-                4. After confirmation from user, user the tool to Transfer control to the next agent.
+                3. If available, using the tool, retrieve the user's past interaction data (pass thread_id) to 
+                infer their dressing style.
+                4. Confirm the user's dressing style preferences. 
+                5. If it is not okay, ask the user for the preference to be modified
+                6. After confirmation from the user, use the tool to transfer to the next agent by including
+                the phrase "user preference accepted" as a cue to transfer. 
 
             """
     openai_llm = ChatOpenAI(api_key=OPENAI_API_KEY, model="gpt-4o")
@@ -206,7 +218,7 @@ def agent2_tools():
 def dress_style_node(state: State) -> Command:
     dress_style_agent = agent2_tools()
     result = dress_style_agent.invoke(state)
-    next_node = "color_recommender" if "data collected" in str(result) else "human"
+    next_node = "color_recommender" if "user preference accepted" in str(result) else "human"
     return Command(
         update={
             "messages": [HumanMessage(content=result["messages"][-1].content, name="dressing_style")],
@@ -221,26 +233,25 @@ def agent3_tools():
    
     color_template = """
                 Role:
-                    You are a Fashion Designer Color palette Agent & Consultant providing fashion color advice based on user 
-                    preferences, complexion and occasion.
+                    You are a Color recommendation assistant providing fashion color 
+                    advice based on user preferences, complexion and occasion.
 
-                    Task:
-                    Generate a recommended color for the outfit:
-
-                    Using the provided details, suggest a complete color ensemble, including a dress/shirt 
-                    and pants color, ensuring they complement the occasion and user’s style.
-                    If the user has a specific dressing style from past interactions, using the tool, integrate it into the recommendation.
+                    Tools available:
+                    1. Summarizer tool: This tool searches and retrieves user's previous inetraction/uploaded 
+                    information. You can use this information to understand user's preference.
+                    2. Handoff tool: TThis tool lets you to transfer to the next agent when you have all the 
+                    information.
                     
-                    Final Validation & Agent Transfer:
-                    Ask the user if the color recommendation is fine.
-                    If the user is fine with the color choices, use the tool to transfer to the next agent.
-
-                    User Prompts:
-                    If the color recommendation is fine:
-                    "These are recommended colors from my end. Do you want to proceed with these colors?"
-
-                    If all details are available & ready for transfer:
-                    "Your color recommendation is complete. Transferring the details to the next agent for final processing..."
+                    Steps:
+                    1. Read the conversation/available user's information in the history.
+                    2. If available, use the tool to retrieve the user's past interaction data (pass thread_id) to 
+                    infer user's dressing style.
+                    3. Suggest colors to the user based on their preference and user's profile.
+                    4. Confirm with the user if the colors are fine.
+                    5. After it's not okay with the user, suggest other colors based on their preference.
+                    6. DO NOT TRANSFER UNTIL YOU DECIDE ON THE COLORS!
+                    6. After confirmation from the user, use the tool to transfer to the next agent by including
+                    the phrase "data collected" as a cue.
 
                 """
 
@@ -288,34 +299,37 @@ def save_outfit(config: Annotated[str, "Username of the user - config"], outfit_
     from collections import defaultdict
 
     print("Entering save_outfits")
-
+    try:
     # Retrieve the existing documents for the given id
-    existing_data =  st.session_state.save_vector_store.get(config)
-    existing_docs = existing_data.get("documents", [])
+        existing_data =  st.session_state.save_vector_store.get(config)
+        existing_docs = existing_data.get("documents", [])
 
-    if not existing_docs:
-        # No document exists for this id; add a new document
-        new_doc = Document(
-            page_content=outfit_description,
-            metadata={"source": "outfit_recommender"}
-        )
-        st.session_state.save_vector_store.add_documents(
-            ids=[config],
-            documents=[new_doc],
-        )
-    else:
-        # Assume there's one document per id and update its content by appending the new description.
-        # You can modify this logic if multiple documents are stored.
-        current_doc = existing_docs[0]
-        new_page_content = current_doc + "\n" + outfit_description
-        updated_doc = Document(
-            page_content=new_page_content,
-            metadata={"outfitNumber": len(existing_docs) + 1}  # Or adjust metadata as needed
-        )
-        st.session_state.save_vector_store.update_documents(
-            ids=[config],
-            documents=[updated_doc]
-        )
+        if not existing_docs:
+            # No document exists for this id; add a new document
+            new_doc = Document(
+                page_content=outfit_description,
+                metadata={"source": "outfit_recommender"}
+            )
+            st.session_state.save_vector_store.add_documents(
+                ids=[config],
+                documents=[new_doc],
+            )
+        else:
+            # Assume there's one document per id and update its content by appending the new description.
+            # You can modify this logic if multiple documents are stored.
+            current_doc = existing_docs[0]
+            new_page_content = current_doc + "\n" + outfit_description
+            updated_doc = Document(
+                page_content=new_page_content,
+                metadata={"outfitNumber": len(existing_docs) + 1}  # Or adjust metadata as needed
+            )
+            st.session_state.save_vector_store.update_documents(
+                ids=[config],
+                documents=[updated_doc]
+            )
+
+    except Exception as e:
+        print("Error: ", e)
 
 
     return "Outfit Saved successfully!"
@@ -352,44 +366,30 @@ def serper_search(outfit_description: Annotated[str, "Provides description of it
 
 def agent4_tools():
     outfit_template = """
-                    Role:
-                    You are Fashion Designer Agent, a model fine-tuned on the Polyvore dataset. Your job is 
-                    to curate a stylish, coordinated outfit based on the user's input. You use the highest 
-                    Compatibility (CP) score to select the best outfit combination, then use the serper_search 
-                    tool to fetch shopping details for each recommended item.
+                Role:
+                You are Fashion Designer Agent. Your task is to curate a stylish, coordinated outfit based 
+                on the given interaction. Suggest a clothing ensemble using Fashion Image Retrieval Task by
+                finding the missing item based on the interaction. Calculate the Compatibility (CP) score for the suggested ensemble 
+                to select the best outfit combination, then use the serper_search 
+                tool to fetch shopping details for each recommended item.
 
-                    Available Tool:
+                Tools available:
 
-                    serper_search: Accepts an outfit item description and returns the title, source, link, price, 
-                    image URL, and delivery details from a shopping search.
+                1. Web search tool: Retrieve the web results for the generated outfit ensemble.
+                2. Save outfit tool: Saves the web retrieved outfit requested by the user.
+                3. Handoff tool: This tool lets you to transfer to the next agent when you have the 
+                confirmation.
 
-                    Task:
-                    Generate an Outfit Recommendation:
-
-                    Use your fine-tuned Polyvore model to generate a coordinated ensemble (dress/shirt and pants) 
-                    that best matches the user's style and occasion.
-
-                    Compute the highest Compatibility Score (CP Score) for the selected outfit.
-
-                    Retrieve Shopping Information:
-
-                    For each item in the recommended outfit (top, bottom, accessories if applicable), formulate a 
-                    detailed description (including style, color, and type).
-
-                    Call the serper_search tool with each item’s description to fetch the corresponding shopping details.
-                    Analyze the tool's response to ensure all necessary details are available.
-
-                    Final Validation & Transfer:
-
-                    Once complete, transfer the final, fully detailed outfit recommendation (including the retrieved product 
-                    details) to the human agent for confirmation. If the user is fine with it, transfer to the next agent.
-                    Else, recommend another outfit set until the user is satisfied.
-
-                    Response Format:
-
-                    If the outfit is ready and shopping details have been retrieved:
-                    “Based on your preferences, here is your best-matching outfit with a CP Score of {CP_Score}. I have retrieved 
-                    shopping details for each recommended item:”
+                Steps:
+                1. Read the interaction so far.
+                2. Generate the outfit using FITB and CP tasks.
+                3. Use the tool to retrieve web results for all the generated outfit. (PRIORITY)
+                4. Show the web results to the user
+                5. Confirm with the user if the web results outfits are good.
+                6. If it is not okay, loop over steps 2 to 5.
+                7. If the user wants to save any outfit for future reference, use the tool to save the outfit.
+                8. After the interaction, use the tool to transfer to the next agent by including the phrase
+                "outfit finalized" as a cue.
 
             """
     outfit_llm = ChatOpenAI(api_key=OPENAI_API_KEY, model="ft:gpt-4o-mini-2024-07-18:personal::B7DwGiCw")
@@ -504,7 +504,7 @@ if __name__ == '__main__':
     if 'checkpoint' not in st.session_state:
         st.session_state.checkpoint = None
 
-    st.title("Fashion Assistant")
+    st.title("AI Fashion Designer")
     with st.popover("Login here with you email.."):
         name = st.text_input("What's your name?")
         st.session_state.thread_config = {"configurable": {"thread_id": name}}
