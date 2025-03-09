@@ -203,7 +203,7 @@ def agent2_tools():
     )
     dress_style_tools = [
         summarizer_tool,
-        save_dress_style,
+        # save_dress_style,
         make_handoff_tool(agent_name="color_recommender")
     ]
 
@@ -505,6 +505,15 @@ if __name__ == '__main__':
         st.session_state.checkpoint = None
 
     st.title("AI Fashion Designer")
+    st.header("Your Personal Style, Powered by AI")
+    st.subheader(" Effortless, Personalized Fashion Recommendations")
+    abc = """
+        1. You will be interacting with 4 agents each curated for specific needs of the user.
+        2. Type whatever you need and upload any of image for personalized recommendations.
+"""
+    st.markdown("Discover your perfect look with AI Fashion Designer—a cutting-edge platform that "
+    "curates personalized outfit recommendations tailored to your style, body type, and occasion.")
+    st.markdown(abc)
     with st.popover("Login here with you email.."):
         name = st.text_input("What's your name?")
         st.session_state.thread_config = {"configurable": {"thread_id": name}}
